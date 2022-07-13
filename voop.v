@@ -7,9 +7,9 @@ const (
 	canvas_height  = 490
 	game_width   = 20
 	game_height  = 14
+	player_speed = 6
 	tile_size    = canvas_width / game_width
 	tick_rate_ms = 16
-    player_move_cooldown = 100
 )
 
 struct Pos {
@@ -33,6 +33,15 @@ enum Direction {
 	@none
 }
 
+enum UserInput {
+	up
+	down
+	left
+	right
+	action
+	@none
+}
+
 
 struct Player {
 mut:
@@ -49,86 +58,120 @@ mut:
 	color gg.Color
 }
 
-struct App {
+struct Game {
 mut:
 	gg         &gg.Context
+	input_buffer     []UserInput
+	input_buffer_last_frame     []UserInput
 	score      int
 	player     Player
 	start_time i64
 	last_tick  i64
 }
 
-fn (mut app App) reset_game() {
-	app.score = 0
-	app.player.pos = Pos{9, 6}
-	app.player.dir = .@none
-	app.player.last_dir = .@none
-	app.player.color = gx.blue
-	app.player.distance_to_target = 0
-	app.start_time = time.ticks()
-	app.last_tick = time.ticks()
+fn (mut game Game) reset() {
+	game.score = 0
+	game.input_buffer = []UserInput{}
+	game.player.pos = Pos{9, 6}
+	game.player.dir = .@none
+	game.player.last_dir = .@none
+	game.player.color = gx.blue
+	game.player.distance_to_target = 0
+	game.start_time = time.ticks()
+	game.last_tick = time.ticks()
+}
+
+
+// convert to direction
+fn (input UserInput)  to_dir() Direction {
+	return match input {
+		.up { Direction.up }
+		.down { Direction.down }
+		.left { Direction.left }
+		.right { Direction.right }
+		else { .@none }
+	}
+}
+
+// finding delta direction
+fn  get_move_delta(dir Direction) Pos {
+	return match dir {
+		.up { Pos{0, -1} }
+		.down { Pos{0, 1} }
+		.left { Pos{-1, 0} }
+		.right { Pos{1, 0} }
+		else { Pos{0, 0} }
+	}
+}
+
+fn last_directional_input(game Game) UserInput {
+	directional_inputs := [UserInput.up, UserInput.down, UserInput.left, UserInput.right]
+	for input in game.input_buffer.reverse() {
+		if input in directional_inputs {
+			return input
+		}
+	}
+	return UserInput.@none
 }
 
 // Game loop
-fn on_frame(mut app App) {
+fn on_frame(mut game Game) {
 
-	mut delta_dir := Pos{0, 0}
+	
+	input_dir := last_directional_input(game)
+	delta_dir := get_move_delta(input_dir.to_dir())
 
 	now := time.ticks()
-	if now -  app.last_tick >= tick_rate_ms {
-		app.gg.begin()
-		app.last_tick = now
+	if now -  game.last_tick >= tick_rate_ms {
+		game.last_tick = now
 
-		if app.player.distance_to_target < 1 {
-			// finding delta direction
-			delta_dir = match app.player.dir {
-				.up { Pos{0, -1} }
-				.down { Pos{0, 1} }
-				.left { Pos{-1, 0} }
-				.right { Pos{1, 0} }
-				.@none { Pos{0, 0} }
+		new_pos := game.player.pos + delta_dir
+
+		new_pos_inbounds := new_pos.x >= 8
+			&& new_pos.x < 12
+			&& new_pos.y >= 5
+			&& new_pos.y < 9
+
+		if new_pos_inbounds && game.player.distance_to_target < 1 && input_dir != .@none {
+			game.player.distance_to_target = tile_size
+			game.player.pos = new_pos
+			game.player.last_dir = input_dir.to_dir()
+		} else if game.player.distance_to_target > 0 {
+			game.player.distance_to_target -= player_speed
+
+			if game.player.distance_to_target < 0 {
+				game.player.distance_to_target = 0
 			}
-
-			new_pos := app.player.pos + delta_dir
-
-			new_pos_inbounds := new_pos.x >= 8
-				&& new_pos.x < 12
-				&& new_pos.y >= 5
-				&& new_pos.y < 9
-
-			if new_pos_inbounds {
-				app.player.distance_to_target = tile_size
-				app.player.pos = new_pos
-			} else {
-				// app.player.distance_to_target = 0
-				app.player.dir = .@none
-			}
-		} else {
-			app.player.distance_to_target -= 4
 		}
 
+
+		game.gg.begin()
+
         // Draw guides
-		app.gg.draw_rect_filled(
+		game.gg.draw_rect_filled(
 			8 * tile_size,
 			5 * tile_size,
 			4 * tile_size,
 			4 * tile_size,
 			gx.light_gray
 		)
+		last_move_delta := get_move_delta(game.player.last_dir)
+		player_x := game.player.pos.x * tile_size - last_move_delta.x * game.player.distance_to_target
+		player_y := game.player.pos.y * tile_size - last_move_delta.y * game.player.distance_to_target
 
 		// Draw player
-		app.gg.draw_rect_filled(
-			app.player.pos.x * tile_size - app.player.distance_to_target * delta_dir.x,
-			app.player.pos.y * tile_size - app.player.distance_to_target * delta_dir.y,
+		game.gg.draw_rect_filled(
+			player_x,
+			player_y,
 			tile_size,
 			tile_size,
-			app.player.color
+			game.player.color
 		)
 
         // Draw grid
 		for x := 0; x < game_width; x++ {
 			for y := 0; y < game_height; y++ {
-				app.gg.draw_circle_filled(
+				game.gg.draw_circle_filled(
 					x * tile_size + tile_size / 2, 
 					y * tile_size + tile_size / 2, 
 					3,
@@ -137,64 +180,75 @@ fn on_frame(mut app App) {
 			}
 		}
 
-		app.gg.end()
+		game.gg.end()
 	}
 
+}
+
+fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game) {
+	input := match key {
+		.w, .up {
+			UserInput.up
+		}
+		.s, .down {
+			UserInput.down
+		}
+		.a, .left {
+			UserInput.left
+		}
+		.d, .right {
+			UserInput.right
+		}
+		.space {
+			UserInput.action
+		}
+		else {
+			UserInput.@none
+		}
+	}
+
+	if input == .@none {
+		return
+	}
+
+	if !(input in game.input_buffer) && status == true {
+		game.input_buffer << input
+	} else if input in game.input_buffer && status == false {
+		game.input_buffer = game.input_buffer.filter(it != input)
+	}
 }
 
 // events
-fn on_keydown(key gg.KeyCode, mod gg.Modifier, mut app App) {
-	match key {
-		.w, .up {
-			if app.player.dir != .down {
-				app.player.dir = .up
-			}
-		}
-		.s, .down {
-			if app.player.dir != .up {
-				app.player.dir = .down
-			}
-		}
-		.a, .left {
-			if app.player.dir != .right {
-				app.player.dir = .left
-			}
-		}
-		.d, .right {
-			if app.player.dir != .left {
-				app.player.dir = .right
-			}
-		}
-		else {}
-	}
+fn on_keydown(key gg.KeyCode, mod gg.Modifier, mut game Game) {
+	set_input_status(true, key, mod, mut game)
 }
 
-fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut app App) {
-	app.player.dir = .@none
+fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
+	set_input_status(false, key, mod, mut game)
 }
 
-// Setup and app start
+// Setup and game start
 fn main() {
-	mut app := App{
+	mut game := Game{
 		gg: 0
 	}
 
-	app.reset_game()
+	game.reset()
 
-	app.gg = gg.new_context(
+	game.gg = gg.new_context(
 		bg_color: gx.black
 		frame_fn: on_frame
 		keydown_fn: on_keydown
 		keyup_fn: on_keyup
-		user_data: &app
+		user_data: &game
 		width: canvas_width
 		height: canvas_height
 		create_window: true
 		resizable: false
-		window_title: 'voop'
+		window_title: 'VOOP'
 	)
 
-	app.gg.run()
+	game.gg.run()
 }
 
 
