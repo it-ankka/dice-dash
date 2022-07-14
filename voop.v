@@ -1,3 +1,5 @@
+module main
+
 import gg
 import gx
 import time
@@ -7,6 +9,7 @@ const (
 	canvas_height  = 490
 	game_width   = 20
 	game_height  = 14
+	dot_size = 6
 	player_speed = 6
 	tile_size    = canvas_width / game_width
 	tick_rate_ms = 16
@@ -94,13 +97,25 @@ fn (input UserInput)  to_dir() Direction {
 }
 
 // finding delta direction
-fn  get_move_delta(dir Direction) Pos {
+fn (dir Direction) move_delta() Pos {
 	return match dir {
 		.up { Pos{0, -1} }
 		.down { Pos{0, 1} }
 		.left { Pos{-1, 0} }
 		.right { Pos{1, 0} }
 		else { Pos{0, 0} }
+	}
+}
+
+// Get the offsets of the three points of the triangle 
+// x1, y1, x2, y2, x3, y3,
+fn (dir Direction) get_arrow_coords() (f64, f64, f64, f64, f64, f64) {
+	return match dir {
+		.up { 0.5, 0.1, 0.1, 0.8, 0.9, 0.8 }
+		.down { 0.5, 0.9, 0.1, 0.2, 0.9, 0.2 }
+		.left { 0.1, 0.5, 0.8, 0.1, 0.8, 0.9 }
+		.right { 0.9, 0.5, 0.2, 0.1, 0.2, 0.9 }
+		else { 0.9, 0.5, 0.2, 0.1, 0.2, 0.9 }
 	}
 }
 
@@ -115,11 +130,12 @@ fn last_directional_input(game Game) UserInput {
 }
 
 // Game loop
+[live]
 fn on_frame(mut game Game) {
 
 	
 	input_dir := last_directional_input(game)
-	delta_dir := get_move_delta(input_dir.to_dir())
+	delta_dir := input_dir.to_dir().move_delta()
 
 	now := time.ticks()
 	if now -  game.last_tick >= tick_rate_ms {
@@ -132,7 +148,7 @@ fn on_frame(mut game Game) {
 			&& new_pos.y >= 5
 			&& new_pos.y < 9
 
-		if new_pos_inbounds && game.player.distance_to_target < 1 && input_dir != .@none {
+		if new_pos_inbounds && game.player.distance_to_target < 1 && input_dir.to_dir() != .@none {
 			game.player.distance_to_target = tile_size
 			game.player.pos = new_pos
 			game.player.last_dir = input_dir.to_dir()
@@ -142,12 +158,13 @@ fn on_frame(mut game Game) {
 			if game.player.distance_to_target < 0 {
 				game.player.distance_to_target = 0
 			}
+		} else if input_dir.to_dir() != .@none {
+			game.player.last_dir = input_dir.to_dir()
 		}
-
 
 		game.gg.begin()
 
-        // Draw guides
+        // Draw guide area
 		game.gg.draw_rect_filled(
 			8 * tile_size,
 			5 * tile_size,
@@ -155,26 +172,29 @@ fn on_frame(mut game Game) {
 			4 * tile_size,
 			gx.light_gray
 		)
-		last_move_delta := get_move_delta(game.player.last_dir)
+		last_move_delta := game.player.last_dir.move_delta()
 		player_x := game.player.pos.x * tile_size - last_move_delta.x * game.player.distance_to_target
 		player_y := game.player.pos.y * tile_size - last_move_delta.y * game.player.distance_to_target
 
-		// Draw player
-		game.gg.draw_rect_filled(
-			player_x,
-			player_y,
-			tile_size,
-			tile_size,
+		x1, y1, x2, y2, x3, y3 := game.player.last_dir.get_arrow_coords()
+		game.gg.draw_triangle_filled(
+			player_x + tile_size * f32(x1), 
+			player_y + tile_size * f32(y1),
+			player_x + tile_size * f32(x2),
+			player_y + tile_size * f32(y2),
+			player_x + tile_size * f32(x3),
+			player_y + tile_size * f32(y3),
 			game.player.color
 		)
 
         // Draw grid
 		for x := 0; x < game_width; x++ {
 			for y := 0; y < game_height; y++ {
-				game.gg.draw_circle_filled(
-					x * tile_size + tile_size / 2, 
-					y * tile_size + tile_size / 2, 
-					3,
+				game.gg.draw_rect_filled(
+					x * tile_size + tile_size / 2 - dot_size / 2, 
+					y * tile_size + tile_size / 2 - dot_size / 2, 
+					dot_size,
+					dot_size,
 					gx.gray
 				)
 			}
