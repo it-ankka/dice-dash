@@ -3,16 +3,25 @@ module main
 import gg
 import gx
 import time
+import rand
 
 const (
 	canvas_width  = 700
 	canvas_height  = 490
 	game_width   = 20
 	game_height  = 14
-	dot_size = 6
+	lanes = 4
+	dot_size = 5
 	player_speed = 6
 	tile_size    = canvas_width / game_width
 	tick_rate_ms = 16
+	enemy_colors = [gx.pink, gx.yellow, gx.orange, gx.blue, gx.green, gx.purple]
+	enemy_spawn_interval_ms = 1500
+	horizontal_lanes_start = game_height / 2 - lanes / 2
+	horizontal_lanes_end = horizontal_lanes_start + lanes
+	vertical_lanes_start = game_width / 2 - lanes / 2
+	vertical_lanes_end = vertical_lanes_start + lanes
+
 )
 
 struct Pos {
@@ -42,6 +51,7 @@ enum UserInput {
 	left
 	right
 	action
+	reset
 	@none
 }
 
@@ -50,17 +60,18 @@ struct Player {
 mut:
 	pos Pos
 	distance_to_target int
-	dir Direction
 	last_dir Direction
 	color gg.Color
 }
 
-struct Shape {
+struct Enemy {
 mut:
+	dir Direction
 	pos Pos
 	color gg.Color
 }
 
+// GAME
 struct Game {
 mut:
 	gg         &gg.Context
@@ -70,18 +81,100 @@ mut:
 	player     Player
 	start_time i64
 	last_tick  i64
+	enemies []Enemy
+	last_enemy_spawn i64
 }
 
 fn (mut game Game) reset() {
 	game.score = 0
-	game.input_buffer = []UserInput{}
+	game.enemies = []
 	game.player.pos = Pos{9, 6}
-	game.player.dir = .@none
-	game.player.last_dir = .@none
+	game.player.last_dir = .right
 	game.player.color = gx.blue
 	game.player.distance_to_target = 0
 	game.start_time = time.ticks()
 	game.last_tick = time.ticks()
+	game.last_enemy_spawn = time.ticks()
+}
+
+fn rnd_bool() bool {
+	return rand.f64() >= 0.5
+}
+
+// Spawn random colored enemy in a random spawn location
+fn (mut game Game) spawn_enemy() {
+	dirs := [Direction.up, Direction.down, Direction.left, Direction.right]
+	enemy_dir := dirs[rand.intn(dirs.len) or { 0 }]
+	lane := rand.intn(lanes) or { 0 }
+	x, y := match enemy_dir {
+		.up {
+			vertical_lanes_start + lane, 
+			(game_height - 1)
+		}
+		.down {
+			vertical_lanes_start + lane, 
+			0
+		}
+		.left {
+			(game_width - 1), 
+			horizontal_lanes_start + lane
+		}
+		.right {
+			0, 
+			horizontal_lanes_start + lane
+		}
+		else {
+			0,
+			0
+		}
+	}
+
+	enemy_pos := Pos{x, y}
+
+	// Randomize color
+	color_idx := rand.intn(enemy_colors.len) or { 0 }
+	color := enemy_colors[color_idx]
+
+
+	// Push all enemies in the same lane forward 
+	match enemy_dir {
+		.up{
+			for mut e in game.enemies {
+				if e.pos.x == enemy_pos.x && e.pos.y > horizontal_lanes_end {
+					e.pos += enemy_dir.move_delta()
+				}
+			}
+		}
+		.down {
+			for mut e in game.enemies {
+				if e.pos.x == enemy_pos.x && e.pos.y < horizontal_lanes_start {
+					e.pos += enemy_dir.move_delta()
+				}
+			}
+		}
+		.left {
+			for mut e in game.enemies {
+				if e.pos.y == enemy_pos.y && e.pos.x > vertical_lanes_end {
+					e.pos += enemy_dir.move_delta()
+				}
+			}
+		}
+		.right {
+			for mut e in game.enemies {
+				if e.pos.y == enemy_pos.y && e.pos.x < vertical_lanes_start {
+					e.pos += enemy_dir.move_delta()
+				}
+			}
+		}
+		else { []Enemy{} }
+	}
+
+	// Spawn enemy
+	game.enemies << Enemy{
+		dir: enemy_dir
+		pos: enemy_pos
+		color: color
+	}
 }
 
 
@@ -119,9 +212,9 @@ fn (dir Direction) get_arrow_coords() (f64, f64, f64, f64, f64, f64) {
 	}
 }
 
-fn last_directional_input(game Game) UserInput {
+fn (input_buffer []UserInput) last_directional_input() UserInput {
 	directional_inputs := [UserInput.up, UserInput.down, UserInput.left, UserInput.right]
-	for input in game.input_buffer.reverse() {
+	for input in input_buffer.reverse() {
 		if input in directional_inputs {
 			return input
 		}
@@ -129,24 +222,35 @@ fn last_directional_input(game Game) UserInput {
 	return UserInput.@none
 }
 
-// Game loop
+// Update loop
 [live]
 fn on_frame(mut game Game) {
-
 	
-	input_dir := last_directional_input(game)
+	input_dir := game.input_buffer.last_directional_input()
 	delta_dir := input_dir.to_dir().move_delta()
 
 	now := time.ticks()
 	if now -  game.last_tick >= tick_rate_ms {
+
+		if now - game.last_enemy_spawn >= enemy_spawn_interval_ms {
+			game.spawn_enemy()
+			game.last_enemy_spawn = now
+		}
+
+		if game.key_pressed(UserInput.reset) {
+			println(game.input_buffer)
+			println(game.input_buffer_last_frame)
+			game.reset()
+		}
+
 		game.last_tick = now
 
 		new_pos := game.player.pos + delta_dir
 
-		new_pos_inbounds := new_pos.x >= 8
-			&& new_pos.x < 12
-			&& new_pos.y >= 5
-			&& new_pos.y < 9
+		new_pos_inbounds := new_pos.x >= vertical_lanes_start
+			&& new_pos.x < vertical_lanes_end
+			&& new_pos.y >= horizontal_lanes_start
+			&& new_pos.y < horizontal_lanes_end
 
 		if new_pos_inbounds && game.player.distance_to_target < 1 && input_dir.to_dir() != .@none {
 			game.player.distance_to_target = tile_size
@@ -162,47 +266,69 @@ fn on_frame(mut game Game) {
 			game.player.last_dir = input_dir.to_dir()
 		}
 
-		game.gg.begin()
+		game.input_buffer_last_frame = game.input_buffer
+		game.draw()
+	}
+}
 
-        // Draw guide area
-		game.gg.draw_rect_filled(
-			8 * tile_size,
-			5 * tile_size,
-			4 * tile_size,
-			4 * tile_size,
-			gx.light_gray
-		)
-		last_move_delta := game.player.last_dir.move_delta()
-		player_x := game.player.pos.x * tile_size - last_move_delta.x * game.player.distance_to_target
-		player_y := game.player.pos.y * tile_size - last_move_delta.y * game.player.distance_to_target
+// Draw the game
+fn (game Game) draw() {
+	game.gg.begin()
 
-		x1, y1, x2, y2, x3, y3 := game.player.last_dir.get_arrow_coords()
-		game.gg.draw_triangle_filled(
-			player_x + tile_size * f32(x1), 
-			player_y + tile_size * f32(y1),
-			player_x + tile_size * f32(x2),
-			player_y + tile_size * f32(y2),
-			player_x + tile_size * f32(x3),
-			player_y + tile_size * f32(y3),
-			game.player.color
-		)
+	// Draw guide area
+	game.gg.draw_rect_filled(
+		vertical_lanes_start * tile_size,
+		horizontal_lanes_start * tile_size,
+		lanes * tile_size,
+		lanes * tile_size,
+		gx.light_gray
+	)
 
-        // Draw grid
-		for x := 0; x < game_width; x++ {
-			for y := 0; y < game_height; y++ {
-				game.gg.draw_rect_filled(
-					x * tile_size + tile_size / 2 - dot_size / 2, 
-					y * tile_size + tile_size / 2 - dot_size / 2, 
-					dot_size,
-					dot_size,
-					gx.gray
-				)
-			}
-		}
+	last_move_delta := game.player.last_dir.move_delta()
+	player_x := game.player.pos.x * tile_size - last_move_delta.x * game.player.distance_to_target
+	player_y := game.player.pos.y * tile_size - last_move_delta.y * game.player.distance_to_target
 
-		game.gg.end()
+	// Draw player
+	x1, y1, x2, y2, x3, y3 := game.player.last_dir.get_arrow_coords()
+	game.gg.draw_triangle_filled(
+		player_x + tile_size * f32(x1), 
+		player_y + tile_size * f32(y1),
+		player_x + tile_size * f32(x2),
+		player_y + tile_size * f32(y2),
+		player_x + tile_size * f32(x3),
+		player_y + tile_size * f32(y3),
+		game.player.color
+	)
+
+	// Draw enemies
+	for enemy in game.enemies {
+			game.gg.draw_rect_filled(
+				enemy.pos.x * tile_size, 
+				enemy.pos.y * tile_size, 
+				tile_size,
+				tile_size,
+				enemy.color
+			)
 	}
 
+	// Draw grid
+	for x := 0; x < game_width; x++ {
+		for y := 0; y < game_height; y++ {
+			game.gg.draw_rect_filled(
+				x * tile_size + tile_size / 2 - dot_size / 2, 
+				y * tile_size + tile_size / 2 - dot_size / 2, 
+				dot_size,
+				dot_size,
+				gx.gray
+			)
+		}
+	}
+
+	game.gg.end()
+}
+
+fn (game Game) key_pressed(input UserInput) bool {
+	return input in game.input_buffer && !(input in game.input_buffer_last_frame)
 }
 
 fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game) {
@@ -221,6 +347,9 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 		}
 		.space {
 			UserInput.action
+		}
+		.r {
+			UserInput.reset
 		}
 		else {
 			UserInput.@none
@@ -269,6 +398,5 @@ fn main() {
 	)
 
 	game.gg.run()
+	game.gg.show_fps()
 }
-
-
