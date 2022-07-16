@@ -31,13 +31,15 @@ const (
 struct Game {
 mut:
 	gg         &gg.Context
-	die_imgs []gg.Image
+	die_imgs 	[]gg.Image
+	spawn_marker_img gg.Image
 	input_buffer     []UserInput
 	input_buffer_last_frame     []UserInput
 	score      int
 	player     Player
 	start_time i64
 	last_tick  i64
+	next_enemy &Enemy
 	enemies []&Enemy
 	last_enemy_spawn i64
 }
@@ -45,6 +47,7 @@ mut:
 fn (mut game Game) reset() {
 	game.score = 0
 	game.enemies = []
+	game.next_enemy = game.get_next_enemy()
 	game.player.pos = Pos{9, 6}
 	game.player.last_dir = .right
 	game.player.value = rand.intn(colors.len) or { 0 }
@@ -93,13 +96,11 @@ fn (game Game) draw() {
 	last_move_delta := game.player.last_dir.move_delta()
 	player_x := game.player.pos.x * tile_size - last_move_delta.x * game.player.distance_to_target
 	player_y := game.player.pos.y * tile_size - last_move_delta.y * game.player.distance_to_target
-	player_color := colors[game.player.value]
 
 	// Draw enemies
 	for enemy in game.enemies {
 			enemy_x := enemy.pos.x * tile_size + ( tile_size - dice_size ) / 2
 			enemy_y := enemy.pos.y * tile_size + ( tile_size - dice_size ) / 2
-			enemy_color := colors[enemy.value]
 			game.gg.draw_image(
 				enemy_x,
 				enemy_y,
@@ -107,25 +108,14 @@ fn (game Game) draw() {
 				dice_size,
 				game.die_imgs[enemy.value]
 			)
-			game.gg.draw_rect_filled(
-				enemy_x,
-				enemy_y,
-				dice_size,
-				dice_size,
-				gg.Color{enemy_color.r, enemy_color.g, enemy_color.b, 75}
-			)
 	}
+
+	next_enemy_x := game.next_enemy.pos.x * tile_size
+	next_enemy_y := game.next_enemy.pos.y * tile_size
+	game.gg.draw_image(next_enemy_x, next_enemy_y, tile_size, tile_size, game.spawn_marker_img)
 
 	// Draw player
 	game.gg.draw_image(player_x, player_y, tile_size, tile_size, game.die_imgs[game.player.value])
-
-	game.gg.draw_rect_filled(
-		player_x,
-		player_y,
-		tile_size,
-		tile_size,
-		gg.Color{player_color.r, player_color.g, player_color.b, 75}
-	)
 
 	// Draw arrow to indicate player direction
 	x1, y1, x2, y2, x3, y3 := game.player.get_arrow_coords()
@@ -138,36 +128,40 @@ fn (game Game) draw() {
 		player_y + tile_size * f32(y3),
 		gx.red
 	)
+	game.gg.draw_triangle_empty(
+		player_x + tile_size * f32(x1),
+		player_y + tile_size * f32(y1),
+		player_x + tile_size * f32(x2),
+		player_y + tile_size * f32(y2),
+		player_x + tile_size * f32(x3),
+		player_y + tile_size * f32(y3),
+		gx.dark_red
+	)
 
 
 	game.gg.end()
 }
 
-// Spawn random colored enemy in a random spawn location
-fn (mut game Game) spawn_enemy() {
+// Randomize spawn of next enemy
+fn (mut game Game) get_next_enemy() &Enemy {
 	dirs := [Direction.up, Direction.down, Direction.left, Direction.right]
 	enemy_dir := dirs[rand.intn(dirs.len) or { 0 }]
 	lane := rand.intn(lanes) or { 0 }
 	x, y := match enemy_dir {
 		.up {
-			vertical_lanes_start + lane, 
-			(game_height - 1)
+			vertical_lanes_start + lane, (game_height - 1)
 		}
 		.down {
-			vertical_lanes_start + lane, 
-			0
+			vertical_lanes_start + lane, 0
 		}
 		.left {
-			(game_width - 1), 
-			horizontal_lanes_start + lane
+			(game_width - 1), horizontal_lanes_start + lane
 		}
 		.right {
-			0, 
-			horizontal_lanes_start + lane
+			0, horizontal_lanes_start + lane
 		}
 		else {
-			0,
-			0
+			0, 0
 		}
 	}
 
@@ -175,6 +169,17 @@ fn (mut game Game) spawn_enemy() {
 
 	// Randomize color
 	value := rand.intn(colors.len) or { 0 }
+
+	return &Enemy{
+		dir: enemy_dir
+		pos: enemy_pos
+		value: value
+	}
+}
+
+fn (mut game Game) spawn_enemy() {
+	enemy_pos := game.next_enemy.pos
+	enemy_dir := game.next_enemy.dir
 
 	// Push all enemies in the same lane forward 
 	mut enemies := match enemy_dir {
@@ -201,13 +206,9 @@ fn (mut game Game) spawn_enemy() {
 				game.reset()
 			}
 	}
-
 	// Spawn enemy
-	game.enemies << &Enemy{
-		dir: enemy_dir
-		pos: enemy_pos
-		value: value
-	}
+	game.enemies << game.next_enemy
+	game.next_enemy = game.get_next_enemy()
 }
 
 fn (game Game) key_pressed(input UserInput) bool {
@@ -276,7 +277,7 @@ fn update(mut game Game) {
 				// If enemies in lane
 				if enemies_in_lane.len > 0 {
 					mut enemy := enemies_in_lane[0]
-					// Destroy enemies with same value
+					// Destroy line of enemies with the same value
 					if enemy.value == game.player.value {
 						mut destroyed_enemies := []&Enemy{}
 						for e in enemies_in_lane {
@@ -287,7 +288,7 @@ fn update(mut game Game) {
 							}
 						}
 						game.enemies = game.enemies.filter(!(it in destroyed_enemies))
-						game.player.value = rand.intn(6)
+						game.player.value = ( game.player.value + rand.int_in_range(1, 4) or { 1 } ) % 6
 					} else {
 						// Swap with enemy
 						game.player.value, enemy.value = enemy.value, game.player.value
@@ -317,13 +318,13 @@ fn update(mut game Game) {
 
 fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game) {
 	input := match key {
-		.w, .up 	{ UserInput.up }
-		.s, .down 	{ UserInput.down }
-		.a, .left 	{ UserInput.left }
-		.d, .right 	{ UserInput.right }
-		.space 		{ UserInput.action }
-		.r 			{ UserInput.reset }
-		else 		{ UserInput.@none }
+		.w, .up 		{ UserInput.up }
+		.s, .down 	 	{ UserInput.down }
+		.a, .left 		{ UserInput.left }
+		.d, .right 		{ UserInput.right }
+		.space, .right_alt	{ UserInput.action }
+		.r 				{ UserInput.reset }
+		else 			{ UserInput.@none }
 	}
 
 	if input == .@none {
@@ -340,13 +341,14 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 // Initialization
 fn init_images(mut game Game) {
 	game.die_imgs = [
-		game.gg.create_image(os.resource_abs_path('resources/images/dieWhite_border1.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/dieWhite_border2.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/dieWhite_border3.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/dieWhite_border4.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/dieWhite_border5.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/dieWhite_border6.png'))
+		game.gg.create_image(os.resource_abs_path('resources/images/die1.png'))
+		game.gg.create_image(os.resource_abs_path('resources/images/die2.png'))
+		game.gg.create_image(os.resource_abs_path('resources/images/die3.png'))
+		game.gg.create_image(os.resource_abs_path('resources/images/die4.png'))
+		game.gg.create_image(os.resource_abs_path('resources/images/die5.png'))
+		game.gg.create_image(os.resource_abs_path('resources/images/die6.png'))
 	]
+	game.spawn_marker_img = game.gg.create_image(os.resource_abs_path('resources/images/spawn_marker.png'))
 }
 
 // events
@@ -363,6 +365,7 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 fn main() {
 	mut game := Game{
 		gg: 0
+		next_enemy: 0
 	}
 
 	game.reset()
