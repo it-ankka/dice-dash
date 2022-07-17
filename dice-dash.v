@@ -55,6 +55,7 @@ mut:
 	state 		GameState
 	score      	int
 	level 		int
+	tick_rate 	int
 	player     	&Entity
 	next_enemy 	&Entity
 	enemies []	&Entity
@@ -386,7 +387,6 @@ fn (mut game Game) update(now i64, delta i64) {
 			enemy.update_move()
 		}
 
-
 		input_is_dir := input.to_dir() != .@none
 
 		new_pos := player.pos + delta_dir
@@ -483,12 +483,11 @@ fn (mut game Game) update(now i64, delta i64) {
 		} 
 }
 
-[live]
 fn loop(mut game Game) {
 
 	now := time.ticks()
 	delta := now -  game.last_tick
-	if delta >= tick_rate_ms {
+	if delta >= game.tick_rate {
 		match game.state {
 			.running {
 				if game.key_pressed(.menu) || game.key_pressed(.quit) {
@@ -581,16 +580,19 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 
 // Setup and game start
 fn main() {
-	mut game := &Game{
+	tick_rate := $if windows { tick_rate_ms / 2 } $else { tick_rate_ms }
+	mut game := Game{
 		gg: 0
 		next_enemy: 0
 		player: 0
+		tick_rate: tick_rate
 	}
 
-	font_path := os.resource_abs_path(os.join_path('..','resources','fonts','ShareTechMono.ttf'))
+	font_path := os.resource_abs_path('resources/fonts/ShareTechMono.ttf')
 	game.reset()
-
+	// native_rendering :=	$if windows { true } $else { false }
 	game.gg = gg.new_context(
+		init_fn: init_images
 		bg_color: gx.black
 		frame_fn: loop
 		font_size: 56
@@ -601,10 +603,11 @@ fn main() {
 		height: canvas_height
 		create_window: true
 		resizable: false
-		window_title: 'VOOP'
+		window_title: 'DICE-DASH'
 		font_path: font_path
-		init_fn: init_images
+		swap_interval: 1
 	)
 
 	game.gg.run()
 }
+
