@@ -1,4 +1,4 @@
-module lib
+module game
 
 // POSITION
 pub struct Pos {
@@ -52,6 +52,9 @@ pub enum UserInput {
 	left
 	right
 	action
+	pause
+	menu
+	quit
 	reset
 	@none
 }

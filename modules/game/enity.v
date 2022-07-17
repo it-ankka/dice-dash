@@ -1,11 +1,11 @@
-module lib
+module game
 
 import rand
 
 pub struct Entity {
-pub:
-	speed int
 pub mut:
+	destroyed bool
+	speed int
 	pos Pos
 	next_pos Pos
 	dir Direction
@@ -20,10 +20,19 @@ pub struct MovementCfg {
 	speed int
 	speed_multiplier f32 = 1
 	destination Pos
-	on_finish OnFinish = .@none
+	on_finish OnMoveFinish = .@none
 }
 
+// Action on move finish
+pub enum OnMoveFinish {
+	reroll
+	destroy
+	@none
+}
 
+pub fn (mut entity Entity) destroy() {
+	entity.destroyed = true
+}
 
 pub fn (mut entity Entity) set_move_def(distance int) {
 	entity.movement.dist = distance
@@ -51,9 +60,9 @@ pub fn (mut entity Entity) update_move() {
 			.reroll {
 				entity.pos = entity.movement.destination
 				entity.value = ( entity.value + rand.int_in_range(1, 4) or { 1 } ) % 6
-			} else {
-
-			}
+			} .destroy {
+				entity.destroyed = true
+			} else { }
 		}
 	} 
 }

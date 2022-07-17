@@ -13,8 +13,8 @@
     - [x] Destroying same color enemies
     - [x] Score
     - [x] Increasing difficulty
-    - [ ] Destroyed status to enemies for animating
-    - [ ] Initialize with more enemies
+    - [x] Destroyed status to enemies
+    - [x] Initialize with more enemies
 - [ ] UI / Graphics:
     - [x] Basic grid
     - [x] Player and enemies
@@ -23,8 +23,8 @@
     - [x] Different color dots for lanes and player area
     - [x] Score counter
     - [x] Color Switch animation
-    - [ ] Game over screen
-    - [ ] Start and reset button
+    - [x] Game over screen
+    - [x] Start and reset button
 - [ ] Audio
     - [ ] Switch sound
     - [ ] Destroy sound

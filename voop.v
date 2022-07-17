@@ -6,7 +6,7 @@ import gx
 import math
 import time
 import rand
-import lib {Entity, Pos, Direction, UserInput}
+import game {Entity, Particle, MovementCfg, Pos, Direction, UserInput, OnMoveFinish}
 
 const (
 	canvas_width  = 1000
@@ -19,8 +19,9 @@ const (
 	enemy_speed = tile_size / 4
 	dot_size = tile_size / 8
 	tick_rate_ms = 16
-	colors = [gx.blue, gx.light_red, gx.yellow, gx.orange, gx.green, gx.purple]
+	colors = [gx.blue, gx.pink, gx.purple, gx.orange, gx.green, gx.red]
 	enemy_spawn_interval_default = 1500
+	particle_lifespan = 250
 	dice_size = tile_size - 2
 	horizontal_lanes_start = game_height / 2 - lanes / 2
 	horizontal_lanes_end = horizontal_lanes_start + lanes
@@ -47,9 +48,11 @@ mut:
 	start_time 	i64
 	last_tick  	i64
 	die_imgs 	[]gg.Image
+	particles 	[]&Particle
 	spawn_marker_img gg.Image
 	input_buffer     []UserInput
 	input_buffer_last_frame     []UserInput
+	state 		GameState
 	score      	int
 	level 		int
 	player     	&Entity
@@ -58,16 +61,32 @@ mut:
 	last_enemy_spawn i64
 }
 
+enum GameState {
+	menu
+	running
+	paused
+	game_over
+}
+
+fn (mut game Game) start() {
+	game.reset()
+	game.state = .running
+}
+
 fn (mut game Game) reset() {
 	game.score = 0
 	game.level = 1
 	game.enemies = []
+	game.particles = []
 	game.next_enemy = game.get_next_enemy()
+	for _ in 0..4 {
+		game.spawn_enemy()
+	}
 	game.player = &Entity{
 		pos: Pos{9, 6}
 		dir: .right
 		value: rand.intn(colors.len) or { 0 }
-		movement: lib.MovementCfg{
+		movement: MovementCfg{
 			dist: 0
 			speed_multiplier: 1
 			speed: player_speed
@@ -78,27 +97,38 @@ fn (mut game Game) reset() {
 	game.last_enemy_spawn = time.ticks()
 }
 
+fn (mut game Game) spawn_particle(pos Pos, color gx.Color) {
+	offset := tile_size / 2
+	game.particles << &Particle{
+		pos: Pos{pos.x * tile_size + offset, pos.y * tile_size + offset}
+		color: color
+		size: rand.int_in_range(2, 5) or { 3 }
+		speed_x: rand.int_in_range(-5, 5) or { 5 }
+		speed_y: rand.int_in_range(-5, 5) or { 5 }
+		lifespan: particle_lifespan
+	}
+}
+
+fn (mut game Game) update_particles(delta i64) {
+	for mut p in game.particles {
+		p.pos = Pos{p.pos.x + p.speed_x, p.pos.y + p.speed_y}
+		p.lifespan -= delta
+		alpha := 255 * p.lifespan / particle_lifespan
+		p.color = gx.rgba(p.color.r, p.color.g, p.color.b, u8(alpha) )
+	}
+}
+
 // Randomize spawn of next enemy
 fn (mut game Game) get_next_enemy() &Entity {
 	dirs := [Direction.up, Direction.down, Direction.left, Direction.right]
 	enemy_dir := dirs[rand.intn(dirs.len) or { 0 }]
 	lane := rand.intn(lanes) or { 0 }
 	x, y := match enemy_dir {
-		.up {
-			vertical_lanes_start + lane, (game_height - 1)
-		}
-		.down {
-			vertical_lanes_start + lane, 0
-		}
-		.left {
-			(game_width - 1), horizontal_lanes_start + lane
-		}
-		.right {
-			0, horizontal_lanes_start + lane
-		}
-		else {
-			0, 0
-		}
+		.up { vertical_lanes_start + lane, (game_height - 1) }
+		.down { vertical_lanes_start + lane, 0 }
+		.left { (game_width - 1), horizontal_lanes_start + lane }
+		.right { 0, horizontal_lanes_start + lane }
+		else { 0, 0 }
 	}
 
 	enemy_pos := Pos{x, y}
@@ -110,7 +140,7 @@ fn (mut game Game) get_next_enemy() &Entity {
 		dir: enemy_dir
 		pos: enemy_pos
 		value: value
-		movement: lib.MovementCfg{
+		movement: MovementCfg{
 			speed: enemy_speed
 			speed_multiplier: 1
 			dist: tile_size
@@ -146,7 +176,7 @@ fn (mut game Game) spawn_enemy() {
 			// Reset game if no longer outside of player's zone
 			if inbounds(e.pos) {
 				println("GAME OVER")
-				game.reset()
+				game.state = .game_over
 			}
 	}
 	// Spawn enemy
@@ -170,6 +200,9 @@ fn (game Game) last_game_input() UserInput {
 
 // Draw the game
 fn (game Game) draw() {
+	player := game.player
+	enemies := game.enemies
+
 	game.gg.begin()
 
 	// Draw player area
@@ -206,7 +239,7 @@ fn (game Game) draw() {
 
 
 	// Draw enemies
-	for enemy in game.enemies {
+	for enemy in enemies {
 			padding := ( tile_size - dice_size ) / 2
 			enemy_x := enemy.pos.x * tile_size - enemy.movement.dist * enemy.movement.dir.move_delta().x + padding
 			enemy_y := enemy.pos.y * tile_size - enemy.movement.dist * enemy.movement.dir.move_delta().y + padding
@@ -219,19 +252,21 @@ fn (game Game) draw() {
 			)
 	}
 
-	// Draw next enemy spawn marker
-	next_enemy_x := game.next_enemy.pos.x * tile_size
-	next_enemy_y := game.next_enemy.pos.y * tile_size
-	game.gg.draw_image(next_enemy_x, next_enemy_y, tile_size, tile_size, game.spawn_marker_img)
+
+	//Draw particles
+	for p in game.particles {
+		game.gg.draw_circle_filled(p.pos.x, p.pos.y, p.size, p.color)
+	}
+
 
 	// Draw player
-	movement_move_delta := game.player.movement.dir.move_delta()
-	player_x := game.player.pos.x * tile_size - movement_move_delta.x * game.player.movement.dist
-	player_y := game.player.pos.y * tile_size - movement_move_delta.y * game.player.movement.dist
-	game.gg.draw_image(player_x, player_y, tile_size, tile_size, game.die_imgs[game.player.value])
+	movement_move_delta := player.movement.dir.move_delta()
+	player_x := player.pos.x * tile_size - movement_move_delta.x * player.movement.dist
+	player_y := player.pos.y * tile_size - movement_move_delta.y * player.movement.dist
+	game.gg.draw_image(player_x, player_y, tile_size, tile_size, game.die_imgs[player.value])
 
 	// Draw arrow to indicate player direction
-	x1, y1, x2, y2, x3, y3 := game.player.get_arrow_coords()
+	x1, y1, x2, y2, x3, y3 := player.get_arrow_coords()
 
 	a_x := player_x + tile_size * f32(x1)
 	a_y := player_y + tile_size * f32(y1)
@@ -243,37 +278,101 @@ fn (game Game) draw() {
 	game.gg.draw_triangle_filled(a_x, a_y, b_x, b_y, c_x, c_y, gx.red)
 	game.gg.draw_triangle_empty(a_x, a_y, b_x, b_y, c_x, c_y, gx.dark_red)
 
-	offset := tile_size / 2
-	// Draw score and level
-	for i, c in '$game.score'.runes() {
-		game.gg.draw_text(i * tile_size + offset, 0, c.str(), default_text_cfg)
-	}
-	for i, c in 'SCORE'.runes() {
-		game.gg.draw_text(i * tile_size + offset, tile_size, c.str(), default_text_cfg)
-	}
-	for i, c in '$game.level'.runes().reverse() {
-		game.gg.draw_text(canvas_width - (i * tile_size + offset), 0, c.str(), default_text_cfg)
-	}
-	for i, c in 'LEVEL'.runes().reverse() {
-		game.gg.draw_text(canvas_width - (i * tile_size + offset), tile_size, c.str(), default_text_cfg)
+	// Draw overlay if game is not running
+	if game.state != .running {
+		game.gg.draw_rect_filled(0,0,game.gg.width, game.gg.height, gx.rgba(10, 10, 10, 225))
 	}
 
+
+	// Draw score and level
+	if game.state != .menu {
+		game.draw_text_to_grid('$game.score', 0, 0, false)
+		game.draw_text_to_grid('SCORE', 0, 1, false)
+
+		game.draw_text_to_grid('$game.level', game_width, 0, true)
+		game.draw_text_to_grid('LEVEL', game_width, 1, true)
+	}
+
+
+	match game.state {
+		.running {
+
+			// Draw next enemy spawn marker
+			next_enemy_x := game.next_enemy.pos.x * tile_size
+			next_enemy_y := game.next_enemy.pos.y * tile_size
+			game.gg.draw_image(next_enemy_x, next_enemy_y, tile_size, tile_size, game.spawn_marker_img)
+		}
+		.game_over, .paused {
+			if game.state == .game_over {
+				game.draw_text_to_grid('GAME', game_width / 2 - lanes / 2, 2, false)
+				game.draw_text_to_grid('OVER', game_width / 2 - lanes / 2, 3, false)
+				game.draw_text_to_grid('SPC,R: RETRY', 4, game_height / 2, false)
+				game.draw_text_to_grid('ESC,Q: MENU', 4, game_height / 2 + 1, false)
+			} else {
+				game.draw_text_to_grid('PAUSED', game_width / 2 - 3, 2, false)
+				game.draw_text_to_grid('SPC: RESUME', 6, game_height / 2, false)
+				game.draw_text_to_grid('R: RETRY', 8, game_height / 2 + 1, false)
+				game.draw_text_to_grid('Q: MENU', 8, game_height / 2 + 2, false)
+			}
+		}
+		.menu {
+			game.draw_text_to_grid('DICE', game_width / 2 - lanes / 2, 1, false)
+			game.draw_text_to_grid('DASH', game_width / 2 - lanes / 2, 2, false)
+			game.draw_text_to_grid('----', game_width / 2 - lanes / 2, 3, false)
+			start_text := 'PRESS SPACE TO START'
+			game.draw_text_to_grid(start_text, game_width / 2 - start_text.len / 2, game_height / 2, false)
+
+			created_by_text := 'MADE BY'
+			name :=  ' LASSI KÖYKKÄ'
+			game.draw_text_to_grid(created_by_text, game_width / 2 - created_by_text.len / 2, game_height - 2, false)
+			game.draw_text_to_grid(name, game_width / 2 - name.len / 2, game_height - 1, false)
+		}
+
+	}
+
+
+
 	game.gg.end()
+}
+
+fn (game Game) draw_text_to_grid(text string, x int, y int, align_right bool) {
+	offset := tile_size / 2
+	if !align_right {
+		for i, c in text.runes() {
+			game.gg.draw_text(x * tile_size + i * tile_size + offset, tile_size * y, c.str(), default_text_cfg)
+		}
+	} else {
+		for i, c in text.runes().reverse() {
+			game.gg.draw_text(x * tile_size - (i * tile_size + offset), tile_size * y, c.str(), default_text_cfg)
+		}
+	}
 }
 
 
 
 // Update loop
-[live]
-fn update(mut game Game) {
-	
-	input := game.last_game_input()
-	delta_dir := input.to_dir().move_delta()
+fn (mut game Game) update(now i64, delta i64) {
+		input := game.last_game_input()
+		delta_dir := input.to_dir().move_delta()
 
-	now := time.ticks()
-	if now -  game.last_tick >= tick_rate_ms {
+		game.last_tick = now
+
 		mut enemies := game.enemies
 		mut player := game.player
+
+		// Remove dead particles
+		game.update_particles(delta)
+		game.particles = game.particles.filter(it.lifespan > 0)
+
+		// Remove destoyed enemies
+		enemies_to_destroy := game.enemies.filter(it.destroyed && player.movement.dist <= 0)
+		for e in enemies_to_destroy {
+			for _ in 0..50 {
+				game.spawn_particle(e.pos, colors[e.value])
+			}
+		}
+		game.enemies = game.enemies.filter(!(it in enemies_to_destroy))
+
 		enemy_spawn_interval := enemy_spawn_interval_default * math.pow(0.9, game.level - 1)
 
 		// Spawn enemy
@@ -287,21 +386,29 @@ fn update(mut game Game) {
 			enemy.update_move()
 		}
 
-		if game.key_pressed(UserInput.reset) {
-			game.reset()
-		}
 
-		game.last_tick = now
+		input_is_dir := input.to_dir() != .@none
 
 		new_pos := player.pos + delta_dir
-
 		new_pos_inbounds := inbounds(new_pos)
 
-		// If player stationary and input pressed
-		if new_pos_inbounds && player.movement.dist < 1 && input != .@none {
-			// Switch action
-			if input == .action && game.key_pressed(.action) {
-				// filter out enemies in the lane
+		if player.movement.dist > 0 {
+			// Update movement position if player is mid-move
+			player.update_move()
+		} else if input_is_dir && (!new_pos_inbounds || (game.key_pressed(input) && player.dir != input.to_dir())){
+			// Turn player to face direction
+			player.dir = input.to_dir()
+		} else if new_pos_inbounds && input != .@none{
+			// Handle input
+
+			if input_is_dir {
+				// Move action
+				player.pos = new_pos
+				player.dir = input.to_dir()
+				player.set_move_def(tile_size)
+			} else if input == .action && game.key_pressed(.action) {
+				// Switch action
+				// filter enemies in the lane
 				mut enemies_in_lane := match player.dir {
 					.up{
 						enemies.filter( it.pos.x == player.pos.x && it.pos.y < horizontal_lanes_start )
@@ -330,16 +437,14 @@ fn update(mut game Game) {
 					mut enemy := enemies_in_lane[0]
 					// Destroy line of enemies with the same value
 					if enemy.value == player.value {
-						mut destroyed_enemies := []&Entity{}
-						for e in enemies_in_lane {
-							if e.value == player.value {
-								destroyed_enemies << e
-							} else {
-								break
-							}
+						mut destroyed_enemies := 0
+						for mut e in enemies_in_lane {
+							if e.value != player.value { break }
+							destroyed_enemies++
+							e.destroy()
 						}
-						game.enemies = enemies.filter(!(it in destroyed_enemies))
-						game.score += destroyed_enemies.len * 100 * destroyed_enemies.len
+
+						game.score += destroyed_enemies * 100 * destroyed_enemies
 						game.level = game.score / 1000 + 1
 
 						distance := math.max(
@@ -349,12 +454,12 @@ fn update(mut game Game) {
 
 						player.pos = enemy.pos
 
-						player.set_move(lib.MovementCfg{
+						player.set_move(MovementCfg{
 							dist: distance, 
 							destination: original_pos
 							dir: player.dir, 
-							speed_multiplier: 3
-							on_finish: lib.OnFinish.destroy
+							speed_multiplier: 4
+							on_finish: OnMoveFinish.reroll
 						})
 					} else {
 						// Swap with enemy
@@ -362,35 +467,70 @@ fn update(mut game Game) {
 						distance := math.max(
 							math.abs(player.pos.x - enemy.pos.x), 
 							math.abs(player.pos.y - enemy.pos.y)) * tile_size  + 1
-							player.set_move(lib.MovementCfg{ 
+							player.set_move(MovementCfg{ 
 								dist: distance,
 								dir: player.dir.reverse(),
 								speed_multiplier: 4
 							})
-							enemy.set_move(lib.MovementCfg{ 
+							enemy.set_move(MovementCfg{ 
 								dist: distance, 
 								dir: enemy.dir.reverse(), 
 								speed_multiplier: 4 
 							})
 					}
 				}
-			} else if input.to_dir() != .@none {
-				// Move action
-				player.pos = new_pos
-				player.dir = input.to_dir()
-				player.set_move_def(tile_size)
-			}
-		} else if player.movement.dist > 0 {
-			// Update movement position if player is mid-move
-			player.update_move()
-		} else if input.to_dir() != .@none {
-			player.dir = input.to_dir()
-		}
-		game.input_buffer_last_frame = game.input_buffer
-		game.draw()
-	}
+			}		
+		} 
 }
 
+[live]
+fn loop(mut game Game) {
+
+	now := time.ticks()
+	delta := now -  game.last_tick
+	if delta >= tick_rate_ms {
+		match game.state {
+			.running {
+				if game.key_pressed(.menu) || game.key_pressed(.quit) {
+					game.state = .paused
+				}
+				game.update(now, delta)
+			} 
+			.menu {
+				if game.key_pressed(.action) {
+					game.reset()
+					game.state = .running
+				}
+				if game.key_pressed(.quit) {
+					game.gg.quit()
+				}
+			}
+			.game_over {
+				if game.key_pressed(.action) || game.key_pressed(.reset) {
+					game.reset()
+					game.state = .running
+				}
+				if game.key_pressed(.quit) || game.key_pressed(.menu) {
+					game.reset()
+					game.state = .menu
+				}
+			}
+			.paused {
+				if game.key_pressed(.action) || game.key_pressed(.menu) {
+					game.state = .running
+				} else if game.key_pressed(.reset) {
+					game.reset()
+					game.state = .running
+				} else if game.key_pressed(.quit) {
+					game.reset()
+					game.state = .menu
+				}
+			}
+		}
+		game.input_buffer_last_frame = game.input_buffer
+	}
+	game.draw()
+}
 
 
 fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game) {
@@ -400,6 +540,8 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 		.a, .left 		{ UserInput.left }
 		.d, .right 		{ UserInput.right }
 		.space, .j		{ UserInput.action }
+		.escape, .p		{ UserInput.menu }
+		.q				{ UserInput.quit }
 		.r 				{ UserInput.reset }
 		else 			{ UserInput.@none }
 	}
@@ -439,20 +581,18 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 
 // Setup and game start
 fn main() {
-	mut game := Game{
+	mut game := &Game{
 		gg: 0
 		next_enemy: 0
 		player: 0
 	}
 
-	font_path := os.resource_abs_path('resources/fonts/ShareTechMono.ttf')
+	font_path := os.resource_abs_path(os.join_path('..','resources','fonts','ShareTechMono.ttf'))
 	game.reset()
 
 	game.gg = gg.new_context(
-		init_fn: init_images
 		bg_color: gx.black
-		frame_fn: update
-		font_path: font_path
+		frame_fn: loop
 		font_size: 56
 		keydown_fn: on_keydown
 		keyup_fn: on_keyup
@@ -462,6 +602,8 @@ fn main() {
 		create_window: true
 		resizable: false
 		window_title: 'VOOP'
+		font_path: font_path
+		init_fn: init_images
 	)
 
 	game.gg.run()
