@@ -66,3 +66,9 @@ pub fn (input UserInput) to_dir() Direction {
 		else { .@none }
 	}
 }
+
+
+pub enum OnFinish {
+	destroy
+	@none
+}

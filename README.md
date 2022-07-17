@@ -11,20 +11,24 @@
     - [x] Game over when enemies reach the center
     - [x] Swapping colors
     - [x] Destroying same color enemies
-    - [ ] Enemy spawn indicator
+    - [x] Score
+    - [x] Increasing difficulty
+    - [ ] Destroyed status to enemies for animating
+    - [ ] Initialize with more enemies
 - [ ] UI / Graphics:
-    - [ ] Start and reset button
     - [x] Basic grid
     - [x] Player and enemies
-    - [ ] Enemy spawn marker
-    - [ ] Color Switch animation
-    - [ ] Enemy smooth movement
-    - [ ] Score counter
-    - [ ] Timer
+    - [x] Enemy spawn marker
+    - [x] Enemy smooth movement
+    - [x] Different color dots for lanes and player area
+    - [x] Score counter
+    - [x] Color Switch animation
+    - [ ] Game over screen
+    - [ ] Start and reset button
 - [ ] Audio
     - [ ] Switch sound
     - [ ] Destroy sound
-    - [ ] Game over sounde
+    - [ ] Game over sound
 - [ ] Misc:
     - [ ] Score
         - [ ] Saving and reading top scores
