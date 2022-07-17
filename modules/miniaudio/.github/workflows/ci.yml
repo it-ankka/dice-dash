@@ -1,0 +1,37 @@
+name: Code CI
+
+on:
+  push:
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+
+jobs:
+  ubuntu-18_04:
+    runs-on: ubuntu-18.04
+    timeout-minutes: 30
+    steps:
+
+    - name: Checkout V
+      uses: actions/checkout@v2
+      with:
+        repository: vlang/v
+
+    - name: Build local v
+      run: make -j4
+
+    - name: Checkout v-miniaudio
+      run: |
+        git clone --depth 1 https://github.com/Larpon/v-miniaudio miniaudio
+        mkdir -p $HOME/.vmodules
+        cd miniaudio
+        ln -s $(pwd) $HOME/.vmodules/miniaudio
+        cd ..
+
+    - name: Test code formatting
+      run: cd miniaudio; ../v test-fmt; cd ..
+
+    - name: Run tests
+      run: ./v -d ci test miniaudio
