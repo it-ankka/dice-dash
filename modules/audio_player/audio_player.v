@@ -34,12 +34,12 @@ pub fn audio_player(files map[string]string) &AudioPlayer {
 
 //
 fn audio_player_callback(buffer &f32, num_frames int, num_channels int, mut p AudioPlayer) {
-	if p.finished {
-		return
-	}
 	ntotal := num_channels * num_frames
 	nremaining := p.samples.len - p.pos
 	nsamples := if nremaining < ntotal { nremaining } else { ntotal }
+	if p.finished {
+		return
+	}
 	if nsamples <= 0 {
 		p.finished = true
 		return
@@ -75,13 +75,15 @@ pub fn (mut p AudioPlayer) play(clip_name string) {
 	for !p.finished {
 		time.sleep(16 * time.millisecond)
 	}
-	p.free()
+	p.samples = []f32{len: samples.len, init: 0}
+	p.finished = false
+	p.pos = 0
 }
 
 fn (mut p AudioPlayer) free() {
-	p.pos = 0
 	p.samples = []f32{}
 	p.finished = false
+	p.pos = 0
 }
 
 // The read_wav_file_samples function below is based on the following sources:

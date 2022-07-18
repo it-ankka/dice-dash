@@ -500,6 +500,7 @@ fn (mut game Game) update(now i64, delta i64) {
 							dir: enemy.dir.reverse(), 
 							speed_multiplier: 4 
 						})
+						go game.ap.play('die_throw2')
 						// go game.ap.play('die_shuffle')
 					}
 				}
