@@ -1,5 +1,5 @@
-# VOOP
-#### My submission for the GMTK game jam 22 inspired by the classic 16bit game ZOOP written in V
+# DICE-DASH
+#### My (late) submission for the GMTK game jam 22 inspired by the classic 16bit game ZOOP
 
 ## TODO:
 
@@ -25,11 +25,12 @@
     - [x] Color Switch animation
     - [x] Game over screen
     - [x] Start and reset button
+    - [ ] Shaking to indicate closeness to the player area
 - [ ] Audio
     - [ ] Switch sound
     - [ ] Destroy sound
     - [ ] Game over sound
 - [ ] Misc:
-    - [ ] Score
-        - [ ] Saving and reading top scores
+    - [ ] Responsive resizing
+    - [ ] Saving and reading top scores
     - [ ] Changing background colors

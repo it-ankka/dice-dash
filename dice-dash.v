@@ -62,6 +62,11 @@ mut:
 	last_enemy_spawn i64
 }
 
+fn (mut game Game) on_resize (e &gg.Event, __ voidptr) { 
+	println("resized")
+	println(e)
+}
+
 enum GameState {
 	menu
 	running
@@ -580,7 +585,8 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 
 // Setup and game start
 fn main() {
-	tick_rate := $if windows { tick_rate_ms / 2 } $else { tick_rate_ms }
+	tick_rate := $if windows || macos { tick_rate_ms / 2 } $else { tick_rate_ms }
+	// tick_rate := 4
 	mut game := Game{
 		gg: 0
 		next_enemy: 0
@@ -603,6 +609,7 @@ fn main() {
 		height: canvas_height
 		create_window: true
 		resizable: false
+		resized_fn: game.on_resize
 		window_title: 'DICE-DASH'
 		font_path: font_path
 		swap_interval: 1
