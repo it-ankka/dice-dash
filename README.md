@@ -28,7 +28,7 @@
     - [ ] Shaking to indicate closeness to the player area
 - [ ] Audio
     - [ ] Switch sound
-    - [ ] Destroy sound
+    - [x] Destroy sound
     - [ ] Game over sound
 - [ ] Misc:
     - [ ] Responsive resizing

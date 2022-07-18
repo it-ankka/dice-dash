@@ -1,5 +1,6 @@
 module main
 
+import audio_player as ap
 import os
 import gg {Rect}
 import gx
@@ -13,6 +14,11 @@ const (
 	canvas_height  = 700
 	game_width   = 20
 	game_height  = 14
+	sounds = {
+		'die_shuffle': os.resource_abs_path('resources/audio/dieShuffle1.wav'),
+		'die_throw1': os.resource_abs_path('resources/audio/dieThrow1.wav'),
+		'die_throw2': os.resource_abs_path('resources/audio/dieThrow2.wav')
+	}
 	tile_size    = canvas_width / game_width
 	lanes = 4
 	player_speed = tile_size / 5
@@ -34,6 +40,7 @@ const (
 	}
 )
 
+
 fn inbounds (pos Pos) bool {
 	return pos.x >= vertical_lanes_start
 	&& pos.x < vertical_lanes_end
@@ -45,6 +52,8 @@ fn inbounds (pos Pos) bool {
 struct Game {
 mut:
 	gg         &gg.Context
+	ap 			&ap.AudioPlayer
+	player_switching bool
 	start_time 	i64
 	last_tick  	i64
 	die_imgs 	[]gg.Image
@@ -377,6 +386,9 @@ fn (mut game Game) update(now i64, delta i64) {
 				game.spawn_particle(e.pos, colors[e.value])
 			}
 		}
+		if enemies_to_destroy.len > 0 {
+			go game.ap.play('die_throw1')
+		}
 		game.enemies = game.enemies.filter(!(it in enemies_to_destroy))
 
 		enemy_spawn_interval := enemy_spawn_interval_default * math.pow(0.9, game.level - 1)
@@ -397,6 +409,11 @@ fn (mut game Game) update(now i64, delta i64) {
 		new_pos := player.pos + delta_dir
 		new_pos_inbounds := inbounds(new_pos)
 
+		// Remember if player presse switch button
+		if game.key_pressed(.action) {
+			game.player_switching = true
+		}
+
 		if player.movement.dist > 0 {
 			// Update movement position if player is mid-move
 			player.update_move()
@@ -411,7 +428,8 @@ fn (mut game Game) update(now i64, delta i64) {
 				player.pos = new_pos
 				player.dir = input.to_dir()
 				player.set_move_def(tile_size)
-			} else if input == .action && game.key_pressed(.action) {
+			} else if  game.player_switching {
+				game.player_switching = false
 				// Switch action
 				// filter enemies in the lane
 				mut enemies_in_lane := match player.dir {
@@ -472,16 +490,17 @@ fn (mut game Game) update(now i64, delta i64) {
 						distance := math.max(
 							math.abs(player.pos.x - enemy.pos.x), 
 							math.abs(player.pos.y - enemy.pos.y)) * tile_size  + 1
-							player.set_move(MovementCfg{ 
-								dist: distance,
-								dir: player.dir.reverse(),
-								speed_multiplier: 4
-							})
-							enemy.set_move(MovementCfg{ 
-								dist: distance, 
-								dir: enemy.dir.reverse(), 
-								speed_multiplier: 4 
-							})
+						player.set_move(MovementCfg{ 
+							dist: distance,
+							dir: player.dir.reverse(),
+							speed_multiplier: 4
+						})
+						enemy.set_move(MovementCfg{ 
+							dist: distance, 
+							dir: enemy.dir.reverse(), 
+							speed_multiplier: 4 
+						})
+						// go game.ap.play('die_shuffle')
 					}
 				}
 			}		
@@ -560,8 +579,10 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 	}
 }
 
+
 // Initialization
-fn init_images(mut game Game) {
+fn init_resources(mut game Game) {
+	game.ap = ap.audio_player(sounds)
 	game.die_imgs = [
 		game.gg.create_image(os.resource_abs_path('resources/images/die1.png'))
 		game.gg.create_image(os.resource_abs_path('resources/images/die2.png'))
@@ -589,6 +610,7 @@ fn main() {
 	// tick_rate := 4
 	mut game := Game{
 		gg: 0
+		ap: 0
 		next_enemy: 0
 		player: 0
 		tick_rate: tick_rate
@@ -598,7 +620,7 @@ fn main() {
 	game.reset()
 	// native_rendering :=	$if windows { true } $else { false }
 	game.gg = gg.new_context(
-		init_fn: init_images
+		init_fn: init_resources
 		bg_color: gx.black
 		frame_fn: loop
 		font_size: 56
