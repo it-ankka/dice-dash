@@ -96,7 +96,7 @@ fn (mut game Game) play_clip(clip_name string) {
 		}
 	}
 
-	go game.ap.play(clip_name)
+	game.ap.play(clip_name)
 }
 
 enum GameState {
@@ -410,7 +410,7 @@ fn (mut game Game) update(now i64, delta i64) {
 			}
 		}
 		if enemies_to_destroy.len > 0 {
-			game.play_clip('die_throw1')
+			go game.play_clip('die_throw1')
 		}
 		game.enemies = game.enemies.filter(!(it in enemies_to_destroy))
 
@@ -523,7 +523,7 @@ fn (mut game Game) update(now i64, delta i64) {
 							dir: enemy.dir.reverse(), 
 							speed_multiplier: 4 
 						})
-						game.play_clip('die_throw2')
+						go game.play_clip('die_throw2')
 					}
 				}
 			}		
