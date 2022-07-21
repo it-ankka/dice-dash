@@ -3,7 +3,7 @@
 
 ## TODO:
 
-- [ ] Core game mechanics:
+- [x] Core game mechanics:
     - [x] Input
     - [x] Player movement
     - [x] Enemy spawning
@@ -27,10 +27,10 @@
     - [x] Start and reset button
     - [ ] Shaking to indicate closeness to the player area
 - [ ] Audio
-    - [ ] Switch sound
+    - [x] Switch sound
     - [x] Destroy sound
     - [ ] Game over sound
 - [ ] Misc:
-    - [ ] Responsive resizing
+    - [x] Responsive resizing
     - [ ] Saving and reading top scores
     - [ ] Changing background colors

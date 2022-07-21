@@ -62,9 +62,8 @@ pub fn (mut p AudioPlayer) stop() {
 }
 
 pub fn (mut p AudioPlayer) play(clip_name string) {
-	println('> playing clip: $clip_name')
 	samples := p.clips[clip_name] or {
-		println("Clip not found!")
+		println("Clip with name $clip_name not found!")
 		return
 	}
 	p.finished = true
