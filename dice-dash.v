@@ -608,9 +608,9 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 // Initialization
 fn init_resources(mut game Game) {
 	//Disable on windows
-	$if !windows {
-		game.ap = ap.audio_player(sounds)
-	}
+	// $if !windows {
+	game.ap = ap.audio_player(sounds)
+	// }
 	game.die_imgs = [
 		game.gg.create_image(os.resource_abs_path('resources/images/die1.png'))
 		game.gg.create_image(os.resource_abs_path('resources/images/die2.png'))
