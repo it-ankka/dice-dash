@@ -64,6 +64,7 @@ pub fn (mut entity Entity) update_move() {
 				entity.destroyed = true
 			} else { }
 		}
+		entity.movement.on_finish = .@none
 	} 
 }
 

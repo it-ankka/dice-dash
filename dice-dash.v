@@ -10,32 +10,28 @@ import rand
 import game {Entity, Particle, MovementCfg, Pos, Direction, UserInput, OnMoveFinish}
 
 const (
-	canvas_width  = 1000
-	canvas_height  = 700
+	canvas_initial_width  = 1000
+	canvas_initial_height  = 700
 	game_width   = 20
 	game_height  = 14
+	tile_initial_size = canvas_initial_width / game_width
 	sounds = {
 		'die_shuffle': os.resource_abs_path('resources/audio/dieShuffle1.wav'),
 		'die_throw1': os.resource_abs_path('resources/audio/dieThrow1.wav'),
 		'die_throw2': os.resource_abs_path('resources/audio/dieThrow2.wav')
 	}
-	tile_size    = canvas_width / game_width
 	lanes = 4
-	player_speed = tile_size / 5
-	enemy_speed = tile_size / 4
-	dot_size = tile_size / 8
 	tick_rate_ms = 16
 	colors = [gx.blue, gx.pink, gx.purple, gx.orange, gx.green, gx.red]
 	enemy_spawn_interval_default = 1500
 	particle_lifespan = 250
-	dice_size = tile_size - 2
 	horizontal_lanes_start = game_height / 2 - lanes / 2
 	horizontal_lanes_end = horizontal_lanes_start + lanes
 	vertical_lanes_start = game_width / 2 - lanes / 2
 	vertical_lanes_end = vertical_lanes_start + lanes
 	default_text_cfg = gx.TextCfg{
 		color: gx.white
-		size: tile_size
+		size: tile_initial_size
 		align: .center
 	}
 )
@@ -61,10 +57,16 @@ mut:
 	spawn_marker_img gg.Image
 	input_buffer     []UserInput
 	input_buffer_last_frame     []UserInput
-	state 		GameState
-	score      	int
-	level 		int
-	tick_rate 	int
+	state 			GameState
+	score      		int
+	level 			int
+	tick_rate 		int
+	tile_size		int
+	player_speed 	int
+	enemy_speed 	int
+	dot_size 	int
+	dice_size 	int
+	text_config gx.TextCfg
 	player     	&Entity
 	next_enemy 	&Entity
 	enemies []	&Entity
@@ -72,8 +74,29 @@ mut:
 }
 
 fn (mut game Game) on_resize (e &gg.Event, __ voidptr) { 
-	println("resized")
-	println(e)
+
+	new_tile_size := math.min(e.window_width / game_width, e.window_height / game_height)
+	game.tile_size = new_tile_size
+	game.player_speed = new_tile_size / 5
+	game.enemy_speed = new_tile_size / 4
+	game.dot_size = new_tile_size / 8
+	game.dice_size = new_tile_size - 2
+	game.text_config = gx.TextCfg{...default_text_cfg, size: new_tile_size}
+	for mut enemy in game.enemies {
+		enemy.movement.speed = game.enemy_speed
+	}
+	game.player.speed = game.player_speed
+}
+
+fn (mut game Game) play_clip(clip_name string) {
+	// If no audio player found, quietly ignore
+	unsafe {
+		if game.ap == 0 {
+			return
+		}
+	}
+
+	go game.ap.play(clip_name)
 }
 
 enum GameState {
@@ -104,7 +127,7 @@ fn (mut game Game) reset() {
 		movement: MovementCfg{
 			dist: 0
 			speed_multiplier: 1
-			speed: player_speed
+			speed: game.player_speed
 		}
 	}
 	game.start_time = time.ticks()
@@ -113,9 +136,9 @@ fn (mut game Game) reset() {
 }
 
 fn (mut game Game) spawn_particle(pos Pos, color gx.Color) {
-	offset := tile_size / 2
+	offset := game.tile_size / 2
 	game.particles << &Particle{
-		pos: Pos{pos.x * tile_size + offset, pos.y * tile_size + offset}
+		pos: Pos{pos.x * game.tile_size + offset, pos.y * game.tile_size + offset}
 		color: color
 		size: rand.int_in_range(2, 5) or { 3 }
 		speed_x: rand.int_in_range(-5, 5) or { 5 }
@@ -156,9 +179,9 @@ fn (mut game Game) get_next_enemy() &Entity {
 		pos: enemy_pos
 		value: value
 		movement: MovementCfg{
-			speed: enemy_speed
+			speed: game.enemy_speed
 			speed_multiplier: 1
-			dist: tile_size
+			dist: game.tile_size
 			dir: enemy_dir
 		}
 	}
@@ -187,7 +210,7 @@ fn (mut game Game) spawn_enemy() {
 
 	for mut e in enemies {
 			e.pos += enemy_dir.move_delta()
-			e.set_move_def(tile_size)
+			e.set_move_def(game.tile_size)
 			// Reset game if no longer outside of player's zone
 			if inbounds(e.pos) {
 				println("GAME OVER")
@@ -222,10 +245,10 @@ fn (game Game) draw() {
 
 	// Draw player area
 	game.gg.draw_rect_filled(
-		vertical_lanes_start * tile_size,
-		horizontal_lanes_start * tile_size,
-		lanes * tile_size,
-		lanes * tile_size,
+		vertical_lanes_start * game.tile_size,
+		horizontal_lanes_start * game.tile_size,
+		lanes * game.tile_size,
+		lanes * game.tile_size,
 		gx.light_gray
 	)
 
@@ -243,10 +266,10 @@ fn (game Game) draw() {
 				}
 			}
 			game.gg.draw_rect_filled(
-				x * tile_size + tile_size / 2 - dot_size / 2,
-				y * tile_size + tile_size / 2 - dot_size / 2,
-				dot_size,
-				dot_size,
+				x * game.tile_size + game.tile_size / 2 - game.dot_size / 2,
+				y * game.tile_size + game.tile_size / 2 - game.dot_size / 2,
+				game.dot_size,
+				game.dot_size,
 				color
 			)
 		}
@@ -255,14 +278,14 @@ fn (game Game) draw() {
 
 	// Draw enemies
 	for enemy in enemies {
-			padding := ( tile_size - dice_size ) / 2
-			enemy_x := enemy.pos.x * tile_size - enemy.movement.dist * enemy.movement.dir.move_delta().x + padding
-			enemy_y := enemy.pos.y * tile_size - enemy.movement.dist * enemy.movement.dir.move_delta().y + padding
+			padding := ( game.tile_size - game.dice_size ) / 2
+			enemy_x := enemy.pos.x * game.tile_size - enemy.movement.dist * enemy.movement.dir.move_delta().x + padding
+			enemy_y := enemy.pos.y * game.tile_size - enemy.movement.dist * enemy.movement.dir.move_delta().y + padding
 			game.gg.draw_image(
 				enemy_x,
 				enemy_y,
-				dice_size,
-				dice_size,
+				game.dice_size,
+				game.dice_size,
 				game.die_imgs[enemy.value]
 			)
 	}
@@ -276,26 +299,26 @@ fn (game Game) draw() {
 
 	// Draw player
 	movement_move_delta := player.movement.dir.move_delta()
-	player_x := player.pos.x * tile_size - movement_move_delta.x * player.movement.dist
-	player_y := player.pos.y * tile_size - movement_move_delta.y * player.movement.dist
-	game.gg.draw_image(player_x, player_y, tile_size, tile_size, game.die_imgs[player.value])
+	player_x := player.pos.x * game.tile_size - movement_move_delta.x * player.movement.dist
+	player_y := player.pos.y * game.tile_size - movement_move_delta.y * player.movement.dist
+	game.gg.draw_image(player_x, player_y, game.tile_size, game.tile_size, game.die_imgs[player.value])
 
 	// Draw arrow to indicate player direction
 	x1, y1, x2, y2, x3, y3 := player.get_arrow_coords()
 
-	a_x := player_x + tile_size * f32(x1)
-	a_y := player_y + tile_size * f32(y1)
-	b_x := player_x + tile_size * f32(x2)
-	b_y := player_y + tile_size * f32(y2)
-	c_x := player_x + tile_size * f32(x3)
-	c_y := player_y + tile_size * f32(y3)
+	a_x := player_x + game.tile_size * f32(x1)
+	a_y := player_y + game.tile_size * f32(y1)
+	b_x := player_x + game.tile_size * f32(x2)
+	b_y := player_y + game.tile_size * f32(y2)
+	c_x := player_x + game.tile_size * f32(x3)
+	c_y := player_y + game.tile_size * f32(y3)
 
 	game.gg.draw_triangle_filled(a_x, a_y, b_x, b_y, c_x, c_y, gx.red)
 	game.gg.draw_triangle_empty(a_x, a_y, b_x, b_y, c_x, c_y, gx.dark_red)
 
 	// Draw overlay if game is not running
 	if game.state != .running {
-		game.gg.draw_rect_filled(0,0,game.gg.width, game.gg.height, gx.rgba(10, 10, 10, 225))
+		game.gg.draw_rect_filled(0,0,game_width * game.tile_size, game_height * game.tile_size, gx.rgba(10, 10, 10, 225))
 	}
 
 
@@ -313,9 +336,9 @@ fn (game Game) draw() {
 		.running {
 
 			// Draw next enemy spawn marker
-			next_enemy_x := game.next_enemy.pos.x * tile_size
-			next_enemy_y := game.next_enemy.pos.y * tile_size
-			game.gg.draw_image(next_enemy_x, next_enemy_y, tile_size, tile_size, game.spawn_marker_img)
+			next_enemy_x := game.next_enemy.pos.x * game.tile_size
+			next_enemy_y := game.next_enemy.pos.y * game.tile_size
+			game.gg.draw_image(next_enemy_x, next_enemy_y, game.tile_size, game.tile_size, game.spawn_marker_img)
 		}
 		.game_over, .paused {
 			if game.state == .game_over {
@@ -351,14 +374,14 @@ fn (game Game) draw() {
 }
 
 fn (game Game) draw_text_to_grid(text string, x int, y int, align_right bool) {
-	offset := tile_size / 2
+	offset := game.tile_size / 2
 	if !align_right {
 		for i, c in text.runes() {
-			game.gg.draw_text(x * tile_size + i * tile_size + offset, tile_size * y, c.str(), default_text_cfg)
+			game.gg.draw_text(x * game.tile_size + i * game.tile_size + offset, game.tile_size * y, c.str(), game.text_config)
 		}
 	} else {
 		for i, c in text.runes().reverse() {
-			game.gg.draw_text(x * tile_size - (i * tile_size + offset), tile_size * y, c.str(), default_text_cfg)
+			game.gg.draw_text(x * game.tile_size - (i * game.tile_size + offset), game.tile_size * y, c.str(), game.text_config)
 		}
 	}
 }
@@ -387,7 +410,7 @@ fn (mut game Game) update(now i64, delta i64) {
 			}
 		}
 		if enemies_to_destroy.len > 0 {
-			go game.ap.play('die_throw1')
+			game.play_clip('die_throw1')
 		}
 		game.enemies = game.enemies.filter(!(it in enemies_to_destroy))
 
@@ -427,23 +450,23 @@ fn (mut game Game) update(now i64, delta i64) {
 				// Move action
 				player.pos = new_pos
 				player.dir = input.to_dir()
-				player.set_move_def(tile_size)
+				player.set_move_def(game.tile_size)
 			} else if  game.player_switching {
 				game.player_switching = false
 				// Switch action
 				// filter enemies in the lane
 				mut enemies_in_lane := match player.dir {
 					.up{
-						enemies.filter( it.pos.x == player.pos.x && it.pos.y < horizontal_lanes_start )
+						enemies.filter( it.pos.x == player.pos.x && it.pos.y < horizontal_lanes_start && !it.destroyed  )
 					}
 					.down {
-						enemies.filter( it.pos.x == player.pos.x && it.pos.y >= horizontal_lanes_end )
+						enemies.filter( it.pos.x == player.pos.x && it.pos.y >= horizontal_lanes_end && !it.destroyed )
 					}
 					.left {
-						enemies.filter( it.pos.y == player.pos.y && it.pos.x < vertical_lanes_start )
+						enemies.filter( it.pos.y == player.pos.y && it.pos.x < vertical_lanes_start && !it.destroyed )
 					}
 					.right {
-						enemies.filter( it.pos.y == player.pos.y && it.pos.x >= vertical_lanes_end )
+						enemies.filter( it.pos.y == player.pos.y && it.pos.x >= vertical_lanes_end && !it.destroyed )
 					}
 					else { enemies.filter(false) }
 				}
@@ -472,7 +495,7 @@ fn (mut game Game) update(now i64, delta i64) {
 
 						distance := math.max(
 							math.abs(player.pos.x - enemy.pos.x), 
-							math.abs(player.pos.y - enemy.pos.y)) * tile_size  + 1
+							math.abs(player.pos.y - enemy.pos.y)) * game.tile_size  + 1
 						original_pos := player.pos
 
 						player.pos = enemy.pos
@@ -489,7 +512,7 @@ fn (mut game Game) update(now i64, delta i64) {
 						player.value, enemy.value = enemy.value, player.value
 						distance := math.max(
 							math.abs(player.pos.x - enemy.pos.x), 
-							math.abs(player.pos.y - enemy.pos.y)) * tile_size  + 1
+							math.abs(player.pos.y - enemy.pos.y)) * game.tile_size  + 1
 						player.set_move(MovementCfg{ 
 							dist: distance,
 							dir: player.dir.reverse(),
@@ -500,14 +523,15 @@ fn (mut game Game) update(now i64, delta i64) {
 							dir: enemy.dir.reverse(), 
 							speed_multiplier: 4 
 						})
-						go game.ap.play('die_throw2')
-						// go game.ap.play('die_shuffle')
+						game.play_clip('die_throw2')
 					}
 				}
 			}		
 		} 
 }
 
+//TODO remove
+[live]
 fn loop(mut game Game) {
 
 	now := time.ticks()
@@ -583,7 +607,10 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 
 // Initialization
 fn init_resources(mut game Game) {
+	//Disable on windows
+	// $if windows {
 	game.ap = ap.audio_player(sounds)
+	// }
 	game.die_imgs = [
 		game.gg.create_image(os.resource_abs_path('resources/images/die1.png'))
 		game.gg.create_image(os.resource_abs_path('resources/images/die2.png'))
@@ -608,13 +635,18 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 // Setup and game start
 fn main() {
 	tick_rate := $if windows || macos { tick_rate_ms / 2 } $else { tick_rate_ms }
-	// tick_rate := 4
 	mut game := Game{
 		gg: 0
 		ap: 0
 		next_enemy: 0
 		player: 0
 		tick_rate: tick_rate
+		tile_size: tile_initial_size
+		player_speed: tile_initial_size / 5
+		enemy_speed: tile_initial_size / 4
+		dot_size: tile_initial_size / 8
+		dice_size: tile_initial_size - 2
+		text_config: default_text_cfg
 	}
 
 	font_path := os.resource_abs_path('resources/fonts/ShareTechMono.ttf')
@@ -628,10 +660,9 @@ fn main() {
 		keydown_fn: on_keydown
 		keyup_fn: on_keyup
 		user_data: &game
-		width: canvas_width
-		height: canvas_height
+		width: canvas_initial_width
+		height: canvas_initial_height
 		create_window: true
-		resizable: false
 		resized_fn: game.on_resize
 		window_title: 'DICE-DASH'
 		font_path: font_path
