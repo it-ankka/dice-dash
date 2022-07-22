@@ -7,15 +7,15 @@ import gx
 import math
 import time
 import rand
-import sdl.mixer as mix
+/* import sdl.mixer as mix */
 import game {Entity, Particle, MovementCfg, Pos, Direction, UserInput, OnMoveFinish}
 
-struct AudioContext {
-mut:
-	music  &mix.Music
-	volume int
-	waves  map[string]&mix.Chunk
-}
+// struct AudioContext {
+// mut:
+// 	music  &mix.Music
+// 	volume int
+// 	waves  map[string]&mix.Chunk
+// }
 
 const (
 	canvas_initial_width  = 1000
@@ -58,7 +58,7 @@ struct Game {
 mut:
 	gg         &gg.Context
 	ap 			&ap.AudioPlayer
-	actx		&AudioContext
+	// actx		&AudioContext
 	player_switching bool
 	start_time 	i64
 	last_tick  	i64
@@ -99,21 +99,20 @@ fn (mut game Game) on_resize (e &gg.Event, __ voidptr) {
 }
 
 fn (mut game Game) play_clip(clip_name string) {
-	// OLD AUDIO PLAYER IMPLEMENTATION
 	// If no audio player found, quietly ignore
-	// 	if game.ap == 0 {
-	// 		return
-	// 	}
-	// }
-	// game.ap.play(clip_name)
-
 	unsafe {
-		if !(game.actx != 0 && clip_name in game.actx.waves) {
+		if game.ap == 0 {
 			return
 		}
 	}
+	game.ap.play(clip_name)
 
-	mix.play_channel(0, game.actx.waves[clip_name], 0)
+	// SDL IMPLEMENTATION
+	// 	if !(game.actx != 0 && clip_name in game.actx.waves) {
+	// 		return
+	// 	}
+
+	// mix.play_channel(0, game.actx.waves[clip_name], 0)
 }
 
 enum GameState {
@@ -624,19 +623,20 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 // Initialization
 fn init_resources(mut game Game) {
 	//Disable on windows
-	// $if !windows {
-	// 	game.ap = ap.audio_player(sounds)
+	$if !windows {
+		game.ap = ap.audio_player(sounds)
+	}
+
+	// SDL implementation
+	// mut actx := &AudioContext{
+	// 	music: 0
+	// 	volume: mix.maxvolume
+	// 	waves: {}
 	// }
 
-	mut actx := &AudioContext{
-		music: 0
-		volume: mix.maxvolume
-		waves: {}
-	}
-
-	for name, path in sounds{
-		actx.waves[name] = mix.load_wav(path.str)
-	}
+	// for name, path in sounds{
+	// 	actx.waves[name] = mix.load_wav(path.str)
+	// }
 
 	// music := mix.load_mus()
 
@@ -665,18 +665,19 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 // Setup and game start
 fn main() {
 
-	mix.init(int(mix.InitFlags.mod))
-	C.atexit(mix.quit)
+	//SDL implementation
+	// mix.init(int(mix.InitFlags.mod))
+	// C.atexit(mix.quit)
 
-	if mix.open_audio(48000, u16(mix.default_format), 2, audio_buf_size) < 0 {
-		println("couldn't open audio")
-	}
+	// if mix.open_audio(48000, u16(mix.default_format), 2, audio_buf_size) < 0 {
+	// 	println("couldn't open audio")
+	// }
 
 	tick_rate := $if windows || macos { tick_rate_ms / 2 } $else { tick_rate_ms }
 	mut game := Game{
 		gg: 0
 		ap: 0
-		actx: 0
+		// actx: 0
 		next_enemy: 0
 		player: 0
 		tick_rate: tick_rate
