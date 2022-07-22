@@ -7,7 +7,15 @@ import gx
 import math
 import time
 import rand
+import sdl.mixer as mix
 import game {Entity, Particle, MovementCfg, Pos, Direction, UserInput, OnMoveFinish}
+
+struct AudioContext {
+mut:
+	music  &mix.Music
+	volume int
+	waves  map[string]&mix.Chunk
+}
 
 const (
 	canvas_initial_width  = 1000
@@ -20,6 +28,7 @@ const (
 		'die_throw1': os.resource_abs_path('resources/audio/dieThrow1.wav'),
 		'die_throw2': os.resource_abs_path('resources/audio/dieThrow2.wav')
 	}
+	audio_buf_size  = 1024
 	lanes = 4
 	tick_rate_ms = 16
 	colors = [gx.blue, gx.pink, gx.purple, gx.orange, gx.green, gx.red]
@@ -49,6 +58,7 @@ struct Game {
 mut:
 	gg         &gg.Context
 	ap 			&ap.AudioPlayer
+	actx		&AudioContext
 	player_switching bool
 	start_time 	i64
 	last_tick  	i64
@@ -89,14 +99,21 @@ fn (mut game Game) on_resize (e &gg.Event, __ voidptr) {
 }
 
 fn (mut game Game) play_clip(clip_name string) {
+	// OLD AUDIO PLAYER IMPLEMENTATION
 	// If no audio player found, quietly ignore
+	// 	if game.ap == 0 {
+	// 		return
+	// 	}
+	// }
+	// game.ap.play(clip_name)
+
 	unsafe {
-		if game.ap == 0 {
+		if !(game.actx != 0 && clip_name in game.actx.waves) {
 			return
 		}
 	}
 
-	game.ap.play(clip_name)
+	mix.play_channel(0, game.actx.waves[clip_name], 0)
 }
 
 enum GameState {
@@ -607,9 +624,23 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 // Initialization
 fn init_resources(mut game Game) {
 	//Disable on windows
-	$if !windows {
-		game.ap = ap.audio_player(sounds)
+	// $if !windows {
+	// 	game.ap = ap.audio_player(sounds)
+	// }
+
+	mut actx := &AudioContext{
+		music: 0
+		volume: mix.maxvolume
+		waves: {}
 	}
+
+	for name, path in sounds{
+		actx.waves[name] = mix.load_wav(path.str)
+	}
+
+	// music := mix.load_mus()
+
+
 	game.die_imgs = [
 		game.gg.create_image(os.resource_abs_path('resources/images/die1.png'))
 		game.gg.create_image(os.resource_abs_path('resources/images/die2.png'))
@@ -633,10 +664,19 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 
 // Setup and game start
 fn main() {
+
+	mix.init(int(mix.InitFlags.mod))
+	C.atexit(mix.quit)
+
+	if mix.open_audio(48000, u16(mix.default_format), 2, audio_buf_size) < 0 {
+		println("couldn't open audio")
+	}
+
 	tick_rate := $if windows || macos { tick_rate_ms / 2 } $else { tick_rate_ms }
 	mut game := Game{
 		gg: 0
 		ap: 0
+		actx: 0
 		next_enemy: 0
 		player: 0
 		tick_rate: tick_rate
