@@ -1,6 +1,10 @@
 # DICE-DASH
 #### My (late) submission for the GMTK game jam 22 inspired by the classic 16bit game ZOOP
 
+## Credits
+- Dice assets and sound effects: Kenney board game assets pack
+- Background music: Caslo - FREEDOM from the album Caslo Vol. 1
+
 ## TODO:
 
 - [x] Core game mechanics:
@@ -26,10 +30,10 @@
     - [x] Game over screen
     - [x] Start and reset button
     - [ ] Shaking to indicate closeness to the player area
-- [ ] Audio
+- [x] Audio
     - [x] Switch sound
     - [x] Destroy sound
-    - [ ] Game over sound
+    - [x] Background music
 - [ ] Misc:
     - [x] Responsive resizing
     - [ ] Saving and reading top scores

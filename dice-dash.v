@@ -1,21 +1,20 @@
 module main
 
-import audio_player as ap
 import os
 import gg {Rect}
 import gx
 import math
 import time
 import rand
-/* import sdl.mixer as mix */
+import sdl.mixer as mix
 import game {Entity, Particle, MovementCfg, Pos, Direction, UserInput, OnMoveFinish}
 
-// struct AudioContext {
-// mut:
-// 	music  &mix.Music
-// 	volume int
-// 	waves  map[string]&mix.Chunk
-// }
+struct AudioContext {
+mut:
+	music  &mix.Music
+	volume int
+	waves  map[string]&mix.Chunk
+}
 
 const (
 	canvas_initial_width  = 1000
@@ -28,6 +27,7 @@ const (
 		'die_throw1': os.resource_abs_path('resources/audio/dieThrow1.wav'),
 		'die_throw2': os.resource_abs_path('resources/audio/dieThrow2.wav')
 	}
+	music_path = os.resource_abs_path('resources/audio/music.mp3')
 	audio_buf_size  = 1024
 	lanes = 4
 	tick_rate_ms = 16
@@ -57,8 +57,7 @@ fn inbounds (pos Pos) bool {
 struct Game {
 mut:
 	gg         &gg.Context
-	ap 			&ap.AudioPlayer
-	// actx		&AudioContext
+	actx		&AudioContext
 	player_switching bool
 	start_time 	i64
 	last_tick  	i64
@@ -83,36 +82,13 @@ mut:
 	last_enemy_spawn i64
 }
 
-fn (mut game Game) on_resize (e &gg.Event, __ voidptr) { 
-
-	new_tile_size := math.min(e.window_width / game_width, e.window_height / game_height)
-	game.tile_size = new_tile_size
-	game.player_speed = new_tile_size / 5
-	game.enemy_speed = new_tile_size / 4
-	game.dot_size = new_tile_size / 8
-	game.dice_size = new_tile_size - 2
-	game.text_config = gx.TextCfg{...default_text_cfg, size: new_tile_size}
-	for mut enemy in game.enemies {
-		enemy.movement.speed = game.enemy_speed
-	}
-	game.player.speed = game.player_speed
-}
 
 fn (mut game Game) play_clip(clip_name string) {
-	// If no audio player found, quietly ignore
-	unsafe {
-		if game.ap == 0 {
-			return
-		}
+	if isnil(game.actx) || !(clip_name in game.actx.waves) {
+		return
 	}
-	game.ap.play(clip_name)
 
-	// SDL IMPLEMENTATION
-	// 	if !(game.actx != 0 && clip_name in game.actx.waves) {
-	// 		return
-	// 	}
-
-	// mix.play_channel(0, game.actx.waves[clip_name], 0)
+	mix.play_channel(0, game.actx.waves[clip_name], 0)
 }
 
 enum GameState {
@@ -426,7 +402,7 @@ fn (mut game Game) update(now i64, delta i64) {
 			}
 		}
 		if enemies_to_destroy.len > 0 {
-			go game.play_clip('die_throw1')
+			game.play_clip('die_throw1')
 		}
 		game.enemies = game.enemies.filter(!(it in enemies_to_destroy))
 
@@ -539,7 +515,7 @@ fn (mut game Game) update(now i64, delta i64) {
 							dir: enemy.dir.reverse(), 
 							speed_multiplier: 4 
 						})
-						go game.play_clip('die_throw2')
+						game.play_clip('die_throw2')
 					}
 				}
 			}		
@@ -555,6 +531,7 @@ fn loop(mut game Game) {
 		match game.state {
 			.running {
 				if game.key_pressed(.menu) || game.key_pressed(.quit) {
+					mix.pause_music()
 					game.state = .paused
 				}
 				game.update(now, delta)
@@ -563,6 +540,12 @@ fn loop(mut game Game) {
 				if game.key_pressed(.action) {
 					game.reset()
 					game.state = .running
+
+					// Play music
+					if mix.play_music(game.actx.music, 1) != -1 {
+						mix.volume_music(game.actx.volume)
+					}
+					mix.resume_music()
 				}
 				if game.key_pressed(.quit) {
 					game.gg.quit()
@@ -572,6 +555,12 @@ fn loop(mut game Game) {
 				if game.key_pressed(.action) || game.key_pressed(.reset) {
 					game.reset()
 					game.state = .running
+
+					// Play music
+					if mix.play_music(game.actx.music, 1) != -1 {
+						mix.volume_music(game.actx.volume)
+					}
+					mix.resume_music()
 				}
 				if game.key_pressed(.quit) || game.key_pressed(.menu) {
 					game.reset()
@@ -580,6 +569,7 @@ fn loop(mut game Game) {
 			}
 			.paused {
 				if game.key_pressed(.action) || game.key_pressed(.menu) {
+					mix.resume_music()
 					game.state = .running
 				} else if game.key_pressed(.reset) {
 					game.reset()
@@ -622,34 +612,41 @@ fn set_input_status(status bool, key gg.KeyCode, mod gg.Modifier, mut game Game)
 
 // Initialization
 fn init_resources(mut game Game) {
-	//Disable on windows
-	$if !windows {
-		game.ap = ap.audio_player(sounds)
+	 // SDL implementation
+
+	 mix.init(int(mix.InitFlags.mod))
+	 C.atexit(mix.quit)
+	if mix.open_audio(48000, u16(mix.default_format), 2, audio_buf_size) < 0 {
+		println("couldn't open audio")
+	} else {
+		println("Audio initialized")
 	}
 
+
+	music := mix.load_mus(music_path.str)
+
 	// SDL implementation
-	// mut actx := &AudioContext{
-	// 	music: 0
-	// 	volume: mix.maxvolume
-	// 	waves: {}
-	// }
+	mut actx := &AudioContext{
+		music: music
+		volume: mix.maxvolume / 2
+		waves: {}
+	}
 
-	// for name, path in sounds{
-	// 	actx.waves[name] = mix.load_wav(path.str)
-	// }
+	for name, path in sounds{
+		actx.waves[name] = mix.load_wav(path.str)
+	}
 
-	// music := mix.load_mus()
-
+	game.actx = actx
 
 	game.die_imgs = [
-		game.gg.create_image(os.resource_abs_path('resources/images/die1.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/die2.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/die3.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/die4.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/die5.png'))
-		game.gg.create_image(os.resource_abs_path('resources/images/die6.png'))
+		game.gg.create_image_from_byte_array($embed_file('resources/images/die1.png').to_bytes())
+		game.gg.create_image_from_byte_array($embed_file('resources/images/die2.png').to_bytes())
+		game.gg.create_image_from_byte_array($embed_file('resources/images/die3.png').to_bytes())
+		game.gg.create_image_from_byte_array($embed_file('resources/images/die4.png').to_bytes())
+		game.gg.create_image_from_byte_array($embed_file('resources/images/die5.png').to_bytes())
+		game.gg.create_image_from_byte_array($embed_file('resources/images/die6.png').to_bytes())
 	]
-	game.spawn_marker_img = game.gg.create_image(os.resource_abs_path('resources/images/spawn_marker.png'))
+	game.spawn_marker_img = game.gg.create_image_from_byte_array($embed_file('resources/images/spawn_marker.png').to_bytes())
 }
 
 // events
@@ -661,23 +658,41 @@ fn on_keyup(key gg.KeyCode, mod gg.Modifier, mut game Game) {
 	set_input_status(false, key, mod, mut game)
 }
 
+fn on_quit(e &gg.Event, mut game Game) {
+	if !isnil(game.actx.music) {
+		mix.free_music(game.actx.music)
+	}
+	mix.close_audio()
+	for _, s in game.actx.waves {
+		mix.free_chunk(s)
+	}
+}
+
+fn on_resize (e &gg.Event, mut game Game) { 
+
+	new_tile_size := math.min(e.window_width / game_width, e.window_height / game_height)
+	game.tile_size = new_tile_size
+	game.player_speed = new_tile_size / 5
+	game.enemy_speed = new_tile_size / 4
+	game.dot_size = new_tile_size / 8
+	game.dice_size = new_tile_size - 2
+	game.text_config = gx.TextCfg{...default_text_cfg, size: new_tile_size}
+	for mut enemy in game.enemies {
+		enemy.movement.speed = game.enemy_speed
+	}
+	game.player.speed = game.player_speed
+}
+
 
 // Setup and game start
 fn main() {
-
-	//SDL implementation
-	// mix.init(int(mix.InitFlags.mod))
-	// C.atexit(mix.quit)
-
-	// if mix.open_audio(48000, u16(mix.default_format), 2, audio_buf_size) < 0 {
-	// 	println("couldn't open audio")
-	// }
-
+	emb_file := $embed_file('resources/audio/dieShuffle1.wav')
+	println(emb_file)
 	tick_rate := $if windows || macos { tick_rate_ms / 2 } $else { tick_rate_ms }
 	mut game := Game{
 		gg: 0
-		ap: 0
-		// actx: 0
+		// ap: 0
+		actx: 0
 		next_enemy: 0
 		player: 0
 		tick_rate: tick_rate
@@ -689,9 +704,8 @@ fn main() {
 		text_config: default_text_cfg
 	}
 
-	font_path := os.resource_abs_path('resources/fonts/ShareTechMono.ttf')
+	font_bytes := $embed_file('resources/fonts/ShareTechMono.ttf').to_bytes()
 	game.reset()
-	// native_rendering :=	$if windows { true } $else { false }
 	game.gg = gg.new_context(
 		init_fn: init_resources
 		bg_color: gx.black
@@ -702,10 +716,11 @@ fn main() {
 		user_data: &game
 		width: canvas_initial_width
 		height: canvas_initial_height
+		quit_fn: on_quit
 		create_window: true
-		resized_fn: game.on_resize
+		resized_fn: on_resize
 		window_title: 'DICE-DASH'
-		font_path: font_path
+		font_bytes_normal: font_bytes
 		swap_interval: 1
 	)
 
