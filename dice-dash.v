@@ -686,8 +686,6 @@ fn on_resize (e &gg.Event, mut game Game) {
 
 // Setup and game start
 fn main() {
-	emb_file := $embed_file('resources/audio/dieShuffle1.wav')
-	println(emb_file)
 	tick_rate := $if windows || macos { tick_rate_ms / 2 } $else { tick_rate_ms }
 	mut game := Game{
 		gg: 0
